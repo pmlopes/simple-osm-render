@@ -1,0 +1,93 @@
+package com.jetdrone.map.source;
+
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
+
+import javax.xml.parsers.ParserConfigurationException;
+
+import org.xml.sax.SAXException;
+
+import com.jetdrone.map.BoundingBox;
+import com.jetdrone.map.MapException;
+import com.jetdrone.map.source.osm.OSMFile;
+
+public class MapSource extends OSMFile {
+
+	private BoundingBox bb;
+
+	private Node nodes;
+	private Way ways;
+
+	public MapSource(String filename) throws MapException, FileNotFoundException {
+		this(filename, false);
+	}
+
+	public MapSource(String filename, boolean forceBoundingBox) throws MapException, FileNotFoundException {
+		this(new FileInputStream(filename), forceBoundingBox);
+	}
+
+	public MapSource(InputStream stream) throws MapException {
+		this(stream, false);
+	}
+
+	public MapSource(InputStream stream, boolean forceBoundingBox) throws MapException {
+		try {
+			read(stream);
+
+			if (forceBoundingBox || bb == null) {
+				double minLon = 360.0;
+				double minLat = 180.0;
+				double maxLon = -360.0;
+				double maxLat = -180.0;
+
+				for (Node node = nodes; node != null; node = node.next()) {
+					if (node.getLon() < minLon)
+						minLon = node.getLon();
+					if (node.getLat() < minLat)
+						minLat = node.getLat();
+					if (node.getLon() > maxLon)
+						maxLon = node.getLon();
+					if (node.getLat() > maxLat)
+						maxLat = node.getLat();
+				}
+				bb = new BoundingBox(minLat, minLon, maxLat, maxLon);
+			}
+
+		} catch (SAXException e) {
+			throw new MapException(e);
+		} catch (IOException e) {
+			throw new MapException(e);
+		} catch (ParserConfigurationException e) {
+			throw new MapException(e);
+		}
+	}
+
+	public BoundingBox getBoundingBox() {
+		return bb;
+	}
+
+	@Override
+	public void setBoundingBox(BoundingBox bb) {
+		this.bb = bb;
+	}
+
+	@Override
+	public void prependNode(Node node) {
+		nodes = node.append(nodes);
+	}
+
+	@Override
+	public void prependWay(Way way) {
+		ways = way.append(ways);
+	}
+
+	public Way getWaysInBoundingBox(BoundingBox bbox) {
+		return ways;
+	}
+
+	public Node getNodesInBoundingBox(BoundingBox bbox) {
+		return nodes;
+	}
+}
