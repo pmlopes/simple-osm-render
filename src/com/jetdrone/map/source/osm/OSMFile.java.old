@@ -1,0 +1,158 @@
+package com.jetdrone.map.source.osm;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.logging.Logger;
+
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.parsers.SAXParserFactory;
+
+import org.xml.sax.Attributes;
+import org.xml.sax.SAXException;
+import org.xml.sax.helpers.DefaultHandler;
+
+import com.jetdrone.map.BoundingBox;
+import com.jetdrone.map.source.Node;
+import com.jetdrone.map.source.Tag;
+import com.jetdrone.map.source.Way;
+
+public abstract class OSMFile extends DefaultHandler {
+
+	private static final Logger LOG = Logger.getLogger(OSMFile.class.getName());
+	
+	Map<Integer, Node> nodeidx = new HashMap<Integer, Node>(); // Node Hash
+
+	private Node cNode;
+	private Way cWay;
+
+	public void read(InputStream stream) throws SAXException, IOException, ParserConfigurationException {
+
+		long tRead = System.currentTimeMillis();
+
+		// Create a builder factory
+		SAXParserFactory factory = SAXParserFactory.newInstance();
+		factory.setValidating(false);
+		// Create the builder and parse the file
+		factory.newSAXParser().parse(stream, this);
+		// free resources
+		stream.close();
+
+		nodeidx.clear();
+		nodeidx = null;
+
+		LOG.info("OSM parsing done (" + ((System.currentTimeMillis() - tRead) / 1000f) + ") secs");
+	}
+
+	@Override
+	@SuppressWarnings("boxing")
+	public void startElement(String uri, String localName, String qName, Attributes attributes) throws SAXException {
+		LOG.fine("start element " + qName);
+		// Parsing Bounds
+		if ("bounds".equals(qName)) {
+			LOG.fine("Parsing bounds");
+			setBoundingBox(new BoundingBox(Double.parseDouble(attributes
+					.getValue("minlat")), Double.parseDouble(attributes
+					.getValue("minlon")), Double.parseDouble(attributes
+					.getValue("maxlat")), Double.parseDouble(attributes
+					.getValue("maxlon"))));
+		}
+		// Parsing Node
+		else if ("node".equals(qName)) {
+			LOG.fine("Parsing Node");
+			cNode = new Node(
+					Integer.parseInt(attributes.getValue("id")),
+					Double.parseDouble(attributes.getValue("lat")),
+					Double.parseDouble(attributes.getValue("lon")));
+
+			// Insert Node
+			nodeidx.put(cNode.id, cNode);
+			prependNode(cNode);
+
+			LOG.fine(cNode.toString());
+		}
+		// Parsing Tags
+		else if ("tag".equals(qName)) {
+			LOG.fine("Parsing Tag");
+
+			if (cNode == null && cWay == null) // End if there is nothing to add
+												// the tag to
+				return;
+
+			String k, v;
+
+			k = attributes.getValue("k");
+			v = attributes.getValue("v");
+			// attributes.getValue("created_by");
+			// attributes.getValue("source");
+			if ("layer".equals(k)) {
+				int layer = Integer.parseInt(v);
+				if (cNode != null) {
+					cNode.setLayer(layer);
+				} else {
+					cWay.setLayer(layer);
+				}
+			} else if ("name".equals(k)) {
+				if (cWay != null) {
+					cWay.setName(v);
+				}
+			}
+
+			Tag cTag = new Tag(k, v);
+
+			LOG.fine(cTag.toString());
+
+			if (cNode != null)
+				cNode.insertTag(cTag);
+			else if (cWay != null)
+				cWay.insertTag(cTag);
+		}
+		// Parsing Way
+		else if ("way".equals(qName)) {
+			LOG.fine("Parsing Way");
+			cWay = new Way(Integer.parseInt(attributes.getValue("id")));
+
+			// Insert Way
+			prependWay(cWay);
+
+			LOG.fine(cWay.toString());
+		}
+		// Parsing WayNode
+		else if ("nd".equals(qName)) {
+			LOG.fine("Parsing Nd");
+			int ref = Integer.parseInt(attributes.getValue("ref"));
+
+			if (ref != 0) {
+				Node n;
+
+				n = nodeidx.get(ref);
+				if (n == null) {
+					LOG.severe("No node with reference " + ref + " found!");
+					return;
+				}
+
+				// Insert WayNode
+				cWay.addWayNode(n);
+				LOG.fine("ND(" + n + ")");
+				cNode = null;
+			}
+		}
+	}
+
+	@Override
+	public void endElement(String uri, String localName, String qName) throws SAXException {
+		LOG.fine("end element");
+		if ("node".equals(qName)) {
+			cNode = null;
+		} else if ("way".equals(qName)) {
+			cWay = null;
+		}
+	}
+
+	public abstract void setBoundingBox(BoundingBox bb);
+
+	public abstract void prependNode(Node n);
+
+	public abstract void prependWay(Way w);
+}
