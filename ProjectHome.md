@@ -1,0 +1,1 @@
+Simple and fast multi threaded OSM tile renderer inspired by libmemphis. It is fully threaded and can draw 60 tiles or more per second on old laptops.
